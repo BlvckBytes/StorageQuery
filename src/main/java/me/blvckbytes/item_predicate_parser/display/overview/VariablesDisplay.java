@@ -124,10 +124,10 @@ public class VariablesDisplay extends Display<VariablesDisplayData> {
     }
 
     // Render filler first, such that it may be overridden by conditionally displayed items
-    config.rootSection.variablesDisplay.items.filler.renderInto(inventory, pageEnvironment);
+    config.rootSection.variablesDisplay.items.filler.renderInto(inventory::setItem, pageEnvironment);
 
-    config.rootSection.variablesDisplay.items.previousPage.renderInto(inventory, pageEnvironment);
-    config.rootSection.variablesDisplay.items.nextPage.renderInto(inventory, pageEnvironment);
+    config.rootSection.variablesDisplay.items.previousPage.renderInto(inventory::setItem, pageEnvironment);
+    config.rootSection.variablesDisplay.items.nextPage.renderInto(inventory::setItem, pageEnvironment);
   }
 
   @Override
