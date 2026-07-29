@@ -1225,6 +1225,14 @@ public class PredicateParserTests extends ParseTestBase {
     );
 
     makeCase(
+      new String[] { "?-pickax" },
+      materialsPredicate(
+        unquotedStringToken(0, 0, "?-pickax"),
+        Tag.ITEMS_PICKAXES.getValues()
+      )
+    );
+
+    makeCase(
       new String[] { "hoe-?" },
       materialsPredicate(
         unquotedStringToken(0, 0, "hoe-?"),
@@ -1254,6 +1262,14 @@ public class PredicateParserTests extends ParseTestBase {
       materialsPredicate(
         unquotedStringToken(0, 0, "arrow-?"),
         List.of(Material.SPECTRAL_ARROW, Material.TIPPED_ARROW)
+      )
+    );
+
+    makeCase(
+      new String[] { "*-arrow" },
+      materialsPredicate(
+        unquotedStringToken(0, 0, "*-arrow"),
+        List.of(Material.ARROW, Material.SPECTRAL_ARROW, Material.TIPPED_ARROW)
       )
     );
   }

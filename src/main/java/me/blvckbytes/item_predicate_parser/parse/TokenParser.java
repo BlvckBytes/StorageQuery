@@ -112,7 +112,15 @@ public class TokenParser {
 
     if (firstChar == INTEGER_WILDCARD_CHAR) {
       walker.nextChar();
-      return new IntegerToken(walker.getArgumentIndex(), firstCharIndex, firstCharIndex, walker, null, false, ComparisonMode.EQUALS);
+
+      var upcomingChar = walker.peekChar();
+
+      if (upcomingChar == 0 || walker.isConsideredWhitespace(upcomingChar))
+        return new IntegerToken(walker.getArgumentIndex(), firstCharIndex, firstCharIndex, walker, null, false, ComparisonMode.EQUALS);
+
+      // Is not just a standalone parameter, but rather a syllable matching-unit with a leading asterisk syllable.
+      walker.undoNextChar();
+      return null;
     }
 
     var comparisonMode = ComparisonMode.EQUALS;
