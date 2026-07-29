@@ -1,5 +1,6 @@
 package me.blvckbytes.item_predicate_parser.predicate;
 
+import me.blvckbytes.item_predicate_parser.ComponentUtil;
 import me.blvckbytes.item_predicate_parser.predicate.stringify.StringifyHandler;
 import me.blvckbytes.item_predicate_parser.token.QuotedStringToken;
 import me.blvckbytes.syllables_matcher.Syllables;
@@ -8,6 +9,7 @@ import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.Objects;
 
 public class TextSearchPredicate implements ItemPredicate {
@@ -38,7 +40,7 @@ public class TextSearchPredicate implements ItemPredicate {
     // ================================================================================
 
     if (meta.hasDisplayName()) {
-      var displayNameSyllables = Syllables.forString(meta.getDisplayName(), Syllables.DELIMITER_FREE_TEXT);
+      var displayNameSyllables = Syllables.forString(ComponentUtil.asTrimmedText(meta.displayName()), Syllables.DELIMITER_FREE_TEXT);
 
       matcher.setTarget(displayNameSyllables);
       matchCount = matcher.match();
@@ -57,8 +59,13 @@ public class TextSearchPredicate implements ItemPredicate {
     if (meta.hasLore()) {
       matchCount = 0;
 
-      for (var loreLine : Objects.requireNonNull(meta.getLore())) {
-        var loreLineSyllables = Syllables.forString(loreLine, Syllables.DELIMITER_FREE_TEXT);
+      var loreLines = meta.lore();
+
+      if (loreLines == null)
+        loreLines = Collections.emptyList();
+
+      for (var loreLine : loreLines) {
+        var loreLineSyllables = Syllables.forString(ComponentUtil.asTrimmedText(loreLine), Syllables.DELIMITER_FREE_TEXT);
 
         matcher.setTarget(loreLineSyllables);
         matchCount += matcher.match();
@@ -114,8 +121,8 @@ public class TextSearchPredicate implements ItemPredicate {
       if (bookMeta.hasPages()) {
         matchCount = 0;
 
-        for (var page : bookMeta.getPages()) {
-          var pageSyllables = Syllables.forString(page, Syllables.DELIMITER_FREE_TEXT);
+        for (var page : bookMeta.pages()) {
+          var pageSyllables = Syllables.forString(ComponentUtil.asTrimmedText(page), Syllables.DELIMITER_FREE_TEXT);
 
           matcher.setTarget(pageSyllables);
           matchCount += matcher.match();
@@ -134,10 +141,10 @@ public class TextSearchPredicate implements ItemPredicate {
     // ================================================================================
 
     if (meta instanceof SkullMeta skullMeta) {
-      var ownerProfile = skullMeta.getOwnerProfile();
+      var playerProfile = skullMeta.getPlayerProfile();
 
-      if (ownerProfile != null) {
-        var ownerName = ownerProfile.getName();
+      if (playerProfile != null) {
+        var ownerName = playerProfile.getName();
 
         if (ownerName != null) {
           var ownerNameSyllables = Syllables.forString(ownerName, Syllables.DELIMITER_FREE_TEXT);
