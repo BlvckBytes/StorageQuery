@@ -8,6 +8,7 @@ import me.blvckbytes.item_predicate_parser.translation.keyed.LangKeyed;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Supplier;
 
 public class CollisionPrefixCaseBuilder {
 
@@ -15,8 +16,8 @@ public class CollisionPrefixCaseBuilder {
   private final List<LangKeyedSource> sources;
   private final List<TranslatedLangKeyedPredicate> predicates;
 
-  public CollisionPrefixCaseBuilder(TranslationRegistry translationRegistry) {
-    this.translationRegistry = translationRegistry;
+  public CollisionPrefixCaseBuilder(Supplier<TranslationRegistry> translationRegistryFactory) {
+    this.translationRegistry = translationRegistryFactory.get();
     this.sources = new ArrayList<>();
     this.predicates = new ArrayList<>();
   }

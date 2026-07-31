@@ -40,7 +40,8 @@
         <dependency>
             <groupId>org.mockbukkit.mockbukkit</groupId>
             <artifactId>mockbukkit-v26.1.2</artifactId>
-            <version>4.114.0</version>
+            <!-- Currently still waiting to get my PR for the MusicInstrumentMetaMock merged -->
+            <version>dev-739db075</version>
             <scope>test</scope>
         </dependency>
         <dependency>

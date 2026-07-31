@@ -21,10 +21,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.mockbukkit.mockbukkit.MockBukkit;
 
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -75,6 +73,7 @@ public abstract class ParseTestBase {
 
   private static final Gson gson = new GsonBuilder().create();
   protected static final Logger logger = Logger.getAnonymousLogger();
+  protected static Supplier<TranslationRegistry> translationRegistryFactory;
   protected static TranslationRegistry translationRegistry;
   protected static PredicateParserFactory parserFactory;
   protected static DetectedServerVersion serverVersion;
@@ -94,7 +93,9 @@ public abstract class ParseTestBase {
 
       var versionDependentCode = new VersionDependentCodeFactory(serverVersion, logger).get();
 
-      translationRegistry = new TranslationRegistry(TranslationLanguage.ENGLISH_US, languageJson, versionDependentCode, null, logger);
+      translationRegistryFactory = () -> new TranslationRegistry(TranslationLanguage.ENGLISH_US, languageJson, versionDependentCode, null, logger);
+
+      translationRegistry = translationRegistryFactory.get();
       translationRegistry.initialize(makeSources());
     }
 
@@ -216,13 +217,30 @@ public abstract class ParseTestBase {
         Registry.MATERIAL.stream().filter(Material::isItem).map(it -> new LangKeyedItemMaterial(it, serverVersion, languageJson)).toList(),
         "[Material] "
       ),
+      new LangKeyedSource(
+        Registry.POTION.stream().map(LangKeyedPotionType::instantiateIfUsed).filter(Objects::nonNull).toList(),
+        "[Potion] "
+      ),
+      new LangKeyedSource(
+        Registry.INSTRUMENT.stream().map(LangKeyedMusicInstrument::new).toList(),
+        "[Instrument] "
+      ),
       new LangKeyedSource(List.of(
         DeteriorationKey.INSTANCE,
         NegationKey.INSTANCE,
         DisjunctionKey.INSTANCE,
         ConjunctionKey.INSTANCE,
         ExactKey.INSTANCE,
-        AmountKey.INSTANCE
+        AmountKey.INSTANCE,
+        InnerAllKey.INSTANCE,
+        InnerAllOrSelfKey.INSTANCE,
+        InnerSomeKey.INSTANCE,
+        InnerSomeOrSelfKey.INSTANCE,
+        AnyKey.INSTANCE,
+        HasNameKey.INSTANCE,
+        RepairCostKey.INSTANCE,
+        EffectCountKey.INSTANCE,
+        EnchantmentCountKey.INSTANCE
       ), "")
     );
   }

@@ -2,18 +2,33 @@ package me.blvckbytes.item_predicate_parser.translation;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import io.papermc.paper.registry.RegistryAccess;
+import io.papermc.paper.registry.RegistryKey;
+import me.blvckbytes.item_predicate_parser.ComponentUtil;
+import me.blvckbytes.item_predicate_parser.GeneratingDetail;
 import me.blvckbytes.item_predicate_parser.SingletonTranslationRegistry;
 import me.blvckbytes.item_predicate_parser.parse.ItemPredicateParseException;
 import me.blvckbytes.item_predicate_parser.parse.ParseConflict;
+import me.blvckbytes.item_predicate_parser.parse.PredicateParser;
+import me.blvckbytes.item_predicate_parser.parse.TokenParser;
+import me.blvckbytes.item_predicate_parser.predicate.ItemPredicate;
+import me.blvckbytes.item_predicate_parser.predicate.PredicateState;
+import me.blvckbytes.item_predicate_parser.predicate.stringify.PlainStringifier;
 import me.blvckbytes.item_predicate_parser.token.UnquotedStringToken;
-import me.blvckbytes.item_predicate_parser.translation.keyed.LangKeyed;
-import me.blvckbytes.item_predicate_parser.translation.keyed.Variable;
+import me.blvckbytes.item_predicate_parser.translation.keyed.*;
 import me.blvckbytes.item_predicate_parser.translation.resolver.TranslationResolver;
 import me.blvckbytes.item_predicate_parser.translation.version.IVersionDependentCode;
 import me.blvckbytes.syllables_matcher.Syllables;
 import me.blvckbytes.syllables_matcher.SyllablesMatcher;
 import me.blvckbytes.syllables_matcher.WildcardMode;
 import org.bukkit.Material;
+import org.bukkit.MusicInstrument;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.Damageable;
+import org.bukkit.inventory.meta.MusicInstrumentMeta;
+import org.bukkit.inventory.meta.PotionMeta;
+import org.bukkit.inventory.meta.Repairable;
+import org.bukkit.potion.PotionType;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -94,6 +109,196 @@ public class TranslationRegistry implements SingletonTranslationRegistry {
       return null;
 
     return entry.normalizedPrefixedTranslation;
+  }
+
+  @Override
+  public @Nullable ItemPredicate generateOrChainPredicateFor(List<ItemStack> items, EnumSet<GeneratingDetail> details) {
+    var itemPredicates = new ArrayList<ItemPredicate>();
+
+    itemLoop:
+    for (var item : items) {
+      if (item == null || item.getType().isAir())
+        continue;
+
+      var itemPredicate = generatePredicateFor(item, details);
+
+      for (var existingPredicate : itemPredicates) {
+        if (existingPredicate.equals(itemPredicate))
+          continue itemLoop;
+      }
+
+      itemPredicates.add(itemPredicate);
+    }
+
+    if (itemPredicates.size() == 1)
+      return itemPredicates.getFirst();
+
+    var orTranslation = getNormalizedPrefixedTranslationBySingleton(DisjunctionKey.INSTANCE);
+
+    if (orTranslation == null)
+      throw new IllegalStateException("Could not locate translation for the OR operator in language " + language);
+
+    var finalPredicate = new StringJoiner(" " + orTranslation + " ");
+
+    for (var itemPredicate : itemPredicates)
+      finalPredicate.add(PlainStringifier.stringify(itemPredicate, true));
+
+    return tryParseItemPredicate(finalPredicate.toString());
+  }
+
+  @Override
+  public @Nullable ItemPredicate generatePredicateFor(ItemStack item, EnumSet<GeneratingDetail> details) {
+    var predicates = new ArrayList<String>();
+
+    var material = item.getType();
+    var materialTranslation = getNormalizedPrefixedTranslationBySingleton(material);
+
+    if (materialTranslation == null)
+      throw new IllegalStateException("Could not locate translation for " + material + " in language " + language);
+
+    predicates.add(materialTranslation);
+
+    if (details.contains(GeneratingDetail.AMOUNT)) {
+      var amountTranslation = getNormalizedPrefixedTranslationBySingleton(AmountKey.INSTANCE);
+
+      if (amountTranslation == null)
+        throw new IllegalStateException("Could not locate translation for the Amount predicate in language " + language);
+
+      predicates.add(amountTranslation + " " + item.getAmount());
+    }
+
+    var predicateState = new PredicateState(item);
+
+    if (details.contains(GeneratingDetail.ENCHANTMENTS) && !predicateState.getEnchantments().isEmpty()) {
+      var sortedEnchantments = new ArrayList<>(predicateState.getEnchantments());
+
+      // Ensure constant order for each time of generating the predicate.
+      sortedEnchantments.sort(Comparator.comparing(entry -> entry.getKey().getKey().getKey()));
+
+      for (var enchantmentEntry : sortedEnchantments) {
+        var enchantment = enchantmentEntry.getKey();
+
+        var enchantmentTranslation = getNormalizedPrefixedTranslationBySingleton(enchantment);
+
+        if (enchantmentTranslation == null)
+          throw new IllegalStateException("Could not locate a translation for the enchantment " + enchantment.getKey() + " in language " + language);
+
+        var omitLevel = enchantment.getMaxLevel() == 1 && enchantmentEntry.getValue() == 1;
+
+        predicates.add(enchantmentTranslation + (omitLevel ? "" : " " + enchantmentEntry.getValue()));
+      }
+    }
+
+    if ((isNaturallyEnchantable(item) || item.getType() == Material.ENCHANTED_BOOK) && details.contains(GeneratingDetail.ENCHANTMENT_COUNT)) {
+      var enchantmentCountTranslation = getNormalizedPrefixedTranslationBySingleton(EnchantmentCountKey.INSTANCE);
+
+      if (enchantmentCountTranslation == null)
+        throw new IllegalStateException("Could not locate translation for the Enchantment-Count predicate in language " + language);
+
+      predicates.add(enchantmentCountTranslation + " " + predicateState.getEnchantments().size());
+    }
+
+    if (details.contains(GeneratingDetail.POTION_EFFECTS) && !predicateState.getEffects().isEmpty()) {
+      var sortedEffects = new ArrayList<>(predicateState.getEffects());
+
+      // Ensure constant order for each time of generating the predicate.
+      sortedEffects.sort(Comparator.comparing(entry -> entry.getType().getKey().getKey()));
+
+      for (var effect : sortedEffects) {
+        var potionEffectTypeTranslation = getNormalizedPrefixedTranslationBySingleton(effect.getType());
+
+        if (potionEffectTypeTranslation == null)
+          throw new IllegalStateException("Could not locate a translation for the potion-effect " + effect.getType().getKey() + " in language " + language);
+
+        predicates.add(potionEffectTypeTranslation + " " + (effect.getAmplifier() + 1) + " " + effect.getDuration());
+      }
+    }
+
+    if (!predicateState.getEffects().isEmpty() && details.contains(GeneratingDetail.EFFECT_COUNT)) {
+      var effectCountTranslation = getNormalizedPrefixedTranslationBySingleton(EffectCountKey.INSTANCE);
+
+      if (effectCountTranslation == null)
+        throw new IllegalStateException("Could not locate translation for the Effect-Count predicate in language " + language);
+
+      predicates.add(effectCountTranslation + " " + predicateState.getEffects().size());
+    }
+
+    if (details.contains(GeneratingDetail.POTION_TYPE)) {
+      PotionType potionType;
+
+      if (predicateState.getMeta() instanceof PotionMeta potionMeta && (potionType = potionMeta.getBasePotionType()) != null) {
+        var potionTypeTranslation = getNormalizedPrefixedTranslationBySingleton(potionType);
+
+        if (potionTypeTranslation == null)
+          throw new IllegalStateException("Could not locate translation for the potion-type " + potionType.getKey() + " in language " + language);
+
+        predicates.add(potionTypeTranslation);
+      }
+    }
+
+    if (details.contains(GeneratingDetail.MUSIC_INSTRUMENT)) {
+      MusicInstrument instrument;
+
+      if (predicateState.getMeta() instanceof MusicInstrumentMeta instrumentMeta && (instrument = instrumentMeta.getInstrument()) != null) {
+        var instrumentTranslation = getNormalizedPrefixedTranslationBySingleton(instrument);
+
+        if (instrumentTranslation == null)
+          throw new IllegalStateException("Could not locate translation for the music-instrument " + instrument.description() + " in language " + language);
+
+        predicates.add(instrumentTranslation);
+      }
+    }
+
+    if (details.contains(GeneratingDetail.DETERIORATION) && item.getType().getMaxDurability() > 0) {
+      if (predicateState.getMeta() instanceof Damageable damageable) {
+        var deteriorationTranslation = getNormalizedPrefixedTranslationBySingleton(DeteriorationKey.INSTANCE);
+
+        if (deteriorationTranslation == null)
+          throw new IllegalStateException("Could not locate translation for the Deterioration predicate in language " + language);
+
+        predicates.add(deteriorationTranslation + " " + (damageable.hasDamage() ? "1" : "0 0"));
+      }
+    }
+
+    if (predicateState.getMeta() != null && details.contains(GeneratingDetail.DISPLAY_NAME)) {
+      var displayName = predicateState.getMeta().displayName();
+
+      if (displayName != null) {
+        var nameText = ComponentUtil.asTrimmedText(displayName);
+
+        if (!nameText.isBlank())
+          predicates.add("\"" + nameText.replace("\"", "\\\"") + "\"");
+      }
+    }
+
+    if (predicateState.getMeta() != null && details.contains(GeneratingDetail.HAS_NAME)) {
+      if (predicateState.getMeta().hasDisplayName()) {
+        var hasNameTranslation = getNormalizedPrefixedTranslationBySingleton(HasNameKey.INSTANCE);
+
+        if (hasNameTranslation == null)
+          throw new IllegalStateException("Could not locate translation for the Has-Name predicate in language " + language);
+
+        predicates.add(hasNameTranslation);
+      }
+    }
+
+    if (details.contains(GeneratingDetail.REPAIR_COST) && (item.getType().getMaxDurability() > 0 || item.getType() == Material.ENCHANTED_BOOK)) {
+      if (predicateState.getMeta() instanceof Repairable repairable) {
+        var repairCostTranslation = getNormalizedPrefixedTranslationBySingleton(RepairCostKey.INSTANCE);
+
+        if (repairCostTranslation == null)
+          throw new IllegalStateException("Could not locate translation for the Repair-Cost predicate in language " + language);
+
+        var hasCost = repairable.hasRepairCost() && repairable.getRepairCost() > 0;
+
+        predicates.add(repairCostTranslation + " " + (hasCost ? ">0" : "0"));
+      }
+    }
+
+    if (predicates.size() == 1)
+      return tryParseItemPredicate(predicates.getFirst());
+
+    return tryParseItemPredicate(String.join(" ", predicates));
   }
 
   @SuppressWarnings("unchecked")
@@ -195,7 +400,7 @@ public class TranslationRegistry implements SingletonTranslationRegistry {
 
       var normalizedTranslationValue = TranslatedLangKeyed.normalize(translationValue);
 
-      var bucket = buckets.computeIfAbsent(normalizedTranslationValue, k -> new ArrayList<>());
+      var bucket = buckets.computeIfAbsent(normalizedTranslationValue, _ -> new ArrayList<>());
       bucket.add(new LangKeyedAndTranslation(langKeyed, translationValue));
     }
 
@@ -298,5 +503,32 @@ public class TranslationRegistry implements SingletonTranslationRegistry {
     }
 
     return accessLanguageKey(fileKey, langKeyed);
+  }
+
+  private @Nullable ItemPredicate tryParseItemPredicate(String input) {
+    var tokens = TokenParser.parseTokens(input);
+
+    var conjunctionTranslation = lookup(ConjunctionKey.INSTANCE);
+
+    if (conjunctionTranslation == null)
+      throw new IllegalStateException("Could not locate translation for the AND operator in language " + language);
+
+    return new PredicateParser(
+      this,
+      conjunctionTranslation,
+      new ArrayList<>(tokens),
+      false
+    ).parseAst();
+  }
+
+  private static boolean isNaturallyEnchantable(ItemStack item) {
+    var enchantmentRegistry = RegistryAccess.registryAccess().getRegistry(RegistryKey.ENCHANTMENT);
+
+    for (var enchantment : enchantmentRegistry) {
+      if (enchantment.canEnchantItem(item))
+        return true;
+    }
+
+    return false;
   }
 }
